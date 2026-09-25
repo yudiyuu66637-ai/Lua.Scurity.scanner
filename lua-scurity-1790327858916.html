@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Lua Security Scanner Pro</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0b0f16;color:#fff;font-family:Arial,sans-serif}
+.container{max-width:760px;margin:auto;padding:15px}h1{text-align:center;margin:8px 0}.subtitle{text-align:center;color:#8b949e;font-size:14px;margin-bottom:15px}
+.card{background:#151b25;border:1px solid #30363d;border-radius:15px;padding:15px;margin-top:14px}
+input[type=file]{width:100%;padding:12px;background:#0d1117;color:#fff;border:1px solid #30363d;border-radius:9px}
+button{width:100%;padding:13px;margin-top:9px;border:0;border-radius:9px;color:#fff;font-size:15px;font-weight:bold;cursor:pointer}.green{background:#238636}.blue{background:#1f6feb}.purple{background:#8957e5}.gray{background:#30363d}.red{background:#da3633}
+textarea{width:100%;min-height:300px;margin-top:10px;padding:12px;background:#0d1117;color:#d7e1ef;border:1px solid #30363d;border-radius:9px;font-family:monospace;font-size:13px;resize:vertical}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;margin-top:12px}.stat{background:#21262d;padding:11px;border-radius:9px;text-align:center}.stat b{display:block;font-size:20px}
+.finding{background:#0d1117;border-left:4px solid #f85149;padding:11px;margin-top:9px;border-radius:8px}.line{margin-top:8px;padding:9px;background:#161b22;border-radius:7px;overflow:auto;white-space:pre-wrap;word-break:break-word;font-family:monospace}
+.badge{display:inline-block;padding:4px 7px;margin-top:5px;border-radius:6px;font-size:11px;font-weight:bold;background:#49151c;color:#ff7b72}.safe{color:#3fb950}.warn{color:#d29922}.danger{color:#ff7b72}.small{color:#8b949e;font-size:12px;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="container">
+<h1>🔐 Lua Security Scanner</h1>
+<div class="subtitle">Deteksi Keylogger • Nomor Baris • Bersihkan • Download</div>
+<div class="card">
+<input id="file" type="file" accept=".lua,.txt">
+<button class="green" onclick="loadFile()">📂 BUKA FILE LUA</button>
+<button class="blue" onclick="scanLua()">🔎 SCAN FILE</button>
+<button class="purple" onclick="cleanKeylogger()">🧹 BERSIHKAN KEYLOGGER</button>
+</div>
+<div id="result"></div>
+<div class="card">
+<h3>📄 KODE ASLI</h3><div class="small">Kode asli tidak diubah.</div>
+<textarea id="original" readonly placeholder="Kode asli akan muncul di sini..."></textarea>
+<button class="gray" onclick="copyText(originalCode)">📋 SALIN KODE ASLI</button>
+<button class="blue" onclick="downloadOriginal()">⬇️ DOWNLOAD KODE ASLI</button>
+</div>
+<div class="card">
+<h3>🧹 KODE BERSIH</h3>
+<textarea id="cleaned" placeholder="Hasil pembersihan akan muncul di sini..."></textarea>
+<button class="gray" onclick="copyText(cleanedCode)">📋 SALIN KODE BERSIH</button>
+<button class="purple" onclick="downloadCleaned()">⬇️ DOWNLOAD LUA BERSIH</button>
+<button class="red" onclick="restoreOriginal()">↩️ KEMBALIKAN KODE ASLI</button>
+</div>
+</div>
+<script>
+let originalCode="",cleanedCode="",originalFileName="script.lua",detectedLines=[];
+const keyloggerPatterns=[
+/\bGetAsyncKeyState\s*\(/i,/\bGetKeyState\s*\(/i,/\bGetKeyboardState\s*\(/i,
+/\bkeybd_event\s*\(/i,/keyboard\.get/i,/keyboard\.isDown/i,/keyboard\.isPressed/i,
+/\bkeypress\b/i,/^.*\bkeyevent\b/i,/onKeyDown\b/i,/onKeyUp\b/i,/onKey\b/i,
+/\bkeylogger\b/i,/^.*\bkeylog\b/i
+];
+const warningRules=[
+{name:"Clipboard",risk:"Tinggi",patterns:[/\bgetClipboard\b/i,/\bsetClipboard\b/i]},
+{name:"Network / HTTP",risk:"Sedang",patterns:[/https?:\/\//i,/\bsocket\b/i,/\bcurl\b/i,/\bfetch\b/i,/\bdownload\b/i]},
+{name:"File Access",risk:"Sedang",patterns:[/\bio\.open\b/i,/\bio\.lines\b/i,/\bio\.input\b/i,/\bio\.output\b/i]},
+{name:"System Command",risk:"Tinggi",patterns:[/\bos\.execute\s*\(/i]},
+{name:"Dynamic Code",risk:"Sedang",patterns:[/\bloadstring\s*\(/i,/\bdofile\s*\(/i]},
+{name:"Token / Password",risk:"Tinggi",patterns:[/\bpassword\b/i,/\bpasswd\b/i,/\btoken\b/i,/\bcookie\b/i]}
+];
+
+function loadFile(){
+ const input=document.getElementById("file");
+ if(!input.files.length)return alert("Pilih file Lua terlebih dahulu.");
+ const file=input.files[0];originalFileName=file.name;
+ const reader=new FileReader();
+ reader.onload=e=>{originalCode=e.target.result;cleanedCode="";document.getElementById("original").value=originalCode;document.getElementById("cleaned").value="";document.getElementById("result").innerHTML='<div class="card"><b class="safe">✅ File berhasil dibuka</b><p class="small">'+escapeHTML(file.name)+'</p></div>';};
+ reader.onerror=()=>alert("File tidak dapat dibaca.");reader.readAsText(file);
+}
+function scanLua(){
+ if(!originalCode)return alert("Buka file Lua terlebih dahulu.");
+ const lines=originalCode.split(/\r?\n/);detectedLines=[];let warnings=[];
+ lines.forEach((line,i)=>{let n=i+1;if(keyloggerPatterns.some(p=>p.test(line)))detectedLines.push({line:n,code:line});
+ warningRules.forEach(r=>{if(r.patterns.some(p=>p.test(line)))warnings.push({line:n,code:line,name:r.name,risk:r.risk});});});
+ let html='<div class="card"><div class="stats"><div class="stat"><b>'+lines.length+'</b>Baris</div><div class="stat"><b class="danger">'+detectedLines.length+'</b>Keylogger</div><div class="stat"><b class="warn">'+warnings.length+'</b>Peringatan</div></div></div>';
+ if(detectedLines.length){html+='<div class="card"><b class="danger">🚨 Pola Keylogger Ditemukan</b>';detectedLines.forEach(x=>html+='<div class="finding"><b>📍 Baris '+x.line+'</b><br><span class="badge">KEYLOGGER / KEYBOARD</span><div class="line">'+escapeHTML(x.code)+'</div></div>');html+='</div>'}
+ else html+='<div class="card"><b class="safe">✅ Tidak ditemukan pola keylogger</b></div>';
+ if(warnings.length){html+='<div class="card"><b class="warn">⚠️ Pola lain yang perlu diperiksa</b>';warnings.forEach(x=>html+='<div class="finding"><b>📍 Baris '+x.line+'</b><br>'+escapeHTML(x.name)+'<div class="line">'+escapeHTML(x.code)+'</div></div>');html+='</div>'}
+ html+='<div class="card small">⚠️ Scanner berbasis pola. Hasil deteksi bukan bukti pasti bahwa kode berbahaya. Periksa konteks kode sebelum menghapusnya.</div>';
+ document.getElementById("result").innerHTML=html;
+}
+function cleanKeylogger(){
+ if(!originalCode)return alert("Buka file Lua terlebih dahulu.");
+ const lines=originalCode.split(/\r?\n/),removed=[],kept=[];
+ lines.forEach((line,i)=>{if(keyloggerPatterns.some(p=>p.test(line)))removed.push({line:i+1,code:line});else kept.push(line);});
+ cleanedCode=kept.join("\n");document.getElementById("cleaned").value=cleanedCode;
+ let html='<div class="card"><b class="safe">🧹 Pembersihan selesai</b><p>Baris yang dihapus: <b>'+removed.length+'</b></p>';
+ removed.forEach(x=>html+='<div class="finding"><b>❌ Baris '+x.line+'</b><div class="line">'+escapeHTML(x.code)+'</div></div>');
+ if(!removed.length)html+='<p class="safe">Tidak ada pola keylogger yang terdeteksi.</p>';
+ html+='<p class="small">Kode asli tetap aman dan tidak diubah.</p></div>';document.getElementById("result").innerHTML=html;
+}
+function downloadFile(content,filename){
+ if(!content)return alert("Tidak ada kode untuk didownload.");
+ const blob=new Blob([content],{type:"text/plain;charset=utf-8"}),url=URL.createObjectURL(blob),a=document.createElement("a");
+ a.href=url;a.download=filename;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function downloadOriginal(){if(!originalCode)return alert("Belum ada kode asli.");downloadFile(originalCode,originalFileName.toLowerCase().endsWith(".lua")?originalFileName:originalFileName+".lua")}
+function downloadCleaned(){if(!cleanedCode)return alert("Tekan BERSIHKAN KEYLOGGER terlebih dahulu.");downloadFile(cleanedCode,originalFileName.replace(/\.[^/.]+$/,"")+"_cleaned.lua")}
+async function copyText(text){if(!text)return alert("Tidak ada kode.");try{await navigator.clipboard.writeText(text);alert("✅ Berhasil disalin.")}catch(e){fallbackCopy(text)}}
+function fallbackCopy(text){const a=document.createElement("textarea");a.value=text;document.body.appendChild(a);a.select();document.execCommand("copy");a.remove();alert("✅ Berhasil disalin.")}
+function restoreOriginal(){if(!originalCode)return alert("Belum ada kode asli.");cleanedCode=originalCode;document.getElementById("cleaned").value=originalCode;alert("↩️ Kode asli dikembalikan.")}
+function escapeHTML(t){return String(t).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
+</script>
+</body>
+</html>
